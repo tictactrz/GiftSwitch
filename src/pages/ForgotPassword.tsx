@@ -23,7 +23,7 @@ export default function ForgotPassword() {
 
       setMessage('Check your email for the password reset link');
     } catch (error) {
-      setError(error.message);
+      setError(error instanceof Error ? error.message : 'An error occurred');
     } finally {
       setLoading(false);
     }

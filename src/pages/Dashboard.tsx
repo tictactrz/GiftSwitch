@@ -13,6 +13,8 @@ interface Group {
 interface Invite {
   id: string;
   group: Group;
+  email: string;
+  status: 'pending' | 'accepted' | 'rejected';
 }
 
 export default function Dashboard() {
@@ -44,7 +46,7 @@ export default function Dashboard() {
 
       if (memberError) throw memberError;
 
-      const groups = memberGroups?.map(mg => mg.group) || [];
+      const groups = memberGroups?.map(mg => mg.group as Group) || [];
       setGroups(groups);
     } catch (error) {
       console.error('Error loading groups:', error);
@@ -59,7 +61,9 @@ export default function Dashboard() {
         .from('group_invites')
         .select(`
           id,
-          group:groups(*)
+          group:groups(*),
+          email,
+          status
         `)
         .eq('email', user?.email)
         .eq('status', 'pending');
@@ -116,7 +120,8 @@ export default function Dashboard() {
       loadGroups();
       navigate(`/groups/${groupData.id}`);
     } catch (error) {
-      setError(error.message);
+      console.error('Error:', error);
+      setError(error instanceof Error ? error.message : 'An error occurred');
     }
   };
 
@@ -162,7 +167,8 @@ export default function Dashboard() {
       loadGroups();
       navigate(`/groups/${group.id}`);
     } catch (error) {
-      setError(error.message);
+      console.error('Error:', error);
+      setError(error instanceof Error ? error.message : 'An error occurred');
     }
   };
 

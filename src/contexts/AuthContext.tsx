@@ -7,7 +7,7 @@ interface AuthContextType {
   loading: boolean;
   signInWithEmail: (email: string, password: string) => Promise<void>;
   signInWithGoogle: () => Promise<void>;
-  signUp: (email: string, password: string, fullName: string) => Promise<{ confirmEmail: boolean, user: User }>;
+  signUp: (email: string, password: string, fullName: string) => Promise<{ confirmEmail: boolean, user: User } | undefined>;
   signOut: () => Promise<void>;
 }
 

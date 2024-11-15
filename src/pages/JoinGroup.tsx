@@ -34,7 +34,7 @@ export default function JoinGroup() {
       console.log('Found group:', group);
 
       // Check if already a member
-      const { data: existingMember, error: memberError } = await supabase
+      const { data: existingMember } = await supabase
         .from('group_members')
         .select('id')
         .eq('group_id', group.id)
@@ -63,7 +63,7 @@ export default function JoinGroup() {
       navigate(`/groups/${group.id}`);
     } catch (error) {
       console.error('Error joining group:', error);
-      setError(error.message);
+      setError(error instanceof Error ? error.message : 'An error occurred');
     } finally {
       setLoading(false);
     }

@@ -29,7 +29,7 @@ export default function Groups() {
 
       if (memberError) throw memberError;
 
-      const groups = memberGroups?.map(mg => mg.group) || [];
+      const groups = memberGroups?.map(mg => mg.group as Group) || [];
       setGroups(groups);
     } catch (error) {
       console.error('Error loading groups:', error);

@@ -22,12 +22,6 @@ interface Member {
   };
 }
 
-interface Couple {
-  id: string;
-  member1_id: string;
-  member2_id: string;
-}
-
 export default function GroupDetails() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -47,7 +41,6 @@ export default function GroupDetails() {
 
   useEffect(() => {
     loadGroupDetails();
-    loadInvites();
   }, [id]);
 
   const loadGroupDetails = async () => {
@@ -93,99 +86,6 @@ export default function GroupDetails() {
     } finally {
       setLoading(false);
     }
-  };
-
-  const handleInviteMember = async (email: string) => {
-    try {
-      // Create the invite
-      const { data: invite, error: inviteError } = await supabase
-        .from('group_invites')
-        .insert({
-          group_id: id,
-          email,
-          status: 'pending'
-        })
-        .select()
-        .single();
-
-      if (inviteError) throw inviteError;
-
-      // Generate invite URL using the production domain
-      const inviteUrl = `${window.location.origin}/invite/${invite.id}`;
-
-      // Send the invite email using the correct function URL
-      const response = await fetch(
-        `${import.meta.env.VITE_FUNCTION_URL}/functions/v1/send-invite`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}`
-          },
-          body: JSON.stringify({
-            email,
-            groupName: group?.name,
-            inviteUrl
-          })
-        }
-      );
-
-      if (!response.ok) {
-        throw new Error('Failed to send invitation');
-      }
-
-      loadInvites();
-    } catch (err) {
-      console.error('Error:', err);
-      alert(err instanceof Error ? err.message : 'Failed to send invitation');
-    }
-  };
-
-  const loadAssignments = async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    
-    if (!user) return;
-
-    // First check if user is admin
-    const { data: memberData } = await supabase
-      .from('group_members')
-      .select('role')
-      .eq('group_id', id)
-      .eq('user_id', user.id)
-      .single();
-
-    const isAdmin = memberData?.role === 'admin';
-
-    // If admin, get all assignments for the group
-    // If not admin, get only their assignment
-    const { data, error } = await supabase
-      .from('gift_assignments')
-      .select('*')
-      .eq('group_id', id)
-      .eq(isAdmin ? 'group_id' : 'giver_id', isAdmin ? id : user.id);
-
-    if (error) {
-      console.error('Error loading assignments:', error);
-      return;
-    }
-
-    setAssignments(data || []);
-  };
-
-  const loadInvites = async () => {
-    if (!isAdmin) return;
-    
-    const { data: invitesData, error: invitesError } = await supabase
-      .from('group_invites')
-      .select('*')
-      .eq('group_id', id);
-
-    if (invitesError) {
-      console.error('Error loading invites:', invitesError);
-      return;
-    }
-
-    setInvites(invitesData || []);
   };
 
   if (loading) {

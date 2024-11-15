@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { useAuth } from '../contexts/AuthContext';
 
 export default function Settings() {
   const [emailNotifications, setEmailNotifications] = useState(true);

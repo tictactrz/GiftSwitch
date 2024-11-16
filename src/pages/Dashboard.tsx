@@ -46,7 +46,7 @@ export default function Dashboard() {
 
       if (memberError) throw memberError;
 
-      const groups = memberGroups?.map(mg => mg.group as Group) || [];
+      const groups = memberGroups?.map(mg => mg.group as unknown as Group) || [];
       setGroups(groups);
     } catch (error) {
       console.error('Error loading groups:', error);
@@ -69,7 +69,10 @@ export default function Dashboard() {
         .eq('status', 'pending');
 
       if (error) throw error;
-      setInvites(invites || []);
+      setInvites((invites || []).map(invite => ({
+        ...invite,
+        group: invite.group as unknown as Group
+      })) as Invite[]);
     } catch (error) {
       console.error('Error loading invites:', error);
     }
@@ -142,7 +145,7 @@ export default function Dashboard() {
       }
 
       // Check if already a member
-      const { data: existingMember, error: memberError } = await supabase
+      const { data: existingMember } = await supabase
         .from('group_members')
         .select('id')
         .eq('group_id', group.id)

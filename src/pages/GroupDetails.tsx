@@ -22,6 +22,12 @@ interface Member {
   };
 }
 
+interface Couple {
+  id: string;
+  member1_id: string;
+  member2_id: string;
+}
+
 export default function GroupDetails() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -32,8 +38,10 @@ export default function GroupDetails() {
   const [error, setError] = useState('');
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
-  const [assignments, setAssignments] = useState<any[]>([]);
+  const [assignments, setAssignments] = useState<{giver_id: string, receiver_id: string}[]>([]);
   const [invites, setInvites] = useState<any[]>([]);
+  const [couples, setCouples] = useState<Couple[]>([]);
+  const [showAllAssignments, setShowAllAssignments] = useState(false);
 
   const isAdmin = members.some(
     member => member.user_id === user?.id && member.role === 'admin'
@@ -81,10 +89,173 @@ export default function GroupDetails() {
 
         setMembers(membersWithProfiles);
       }
+
+      // Load couples
+      const { data: couplesData, error: couplesError } = await supabase
+        .from('couples')
+        .select('*')
+        .eq('group_id', id);
+
+      if (couplesError) throw couplesError;
+      setCouples(couplesData || []);
+
+      // Load assignments
+      const { data: assignmentsData, error: assignmentsError } = await supabase
+        .from('gift_assignments')
+        .select('*')
+        .eq('group_id', id);
+
+      if (assignmentsError) throw assignmentsError;
+      setAssignments(assignmentsData || []);
+
+      // Load invites
+      const { data: invitesData, error: invitesError } = await supabase
+        .from('group_invites')
+        .select('*')
+        .eq('group_id', id);
+
+      if (invitesError) throw invitesError;
+      setInvites(invitesData || []);
+
     } catch (error) {
-      setError(error.message);
+      setError(error instanceof Error ? error.message : 'An unexpected error occurred');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const generateAssignments = () => {
+    console.log('Starting assignment generation with members:', members);
+    console.log('Current couples:', couples);
+
+    // Convert members to array of IDs
+    const availableGivers = members.map(m => m.user_id);
+    let availableReceivers = [...availableGivers];
+    const newAssignments: {giver_id: string, receiver_id: string}[] = [];
+
+    console.log('Available givers:', availableGivers);
+    console.log('Available receivers:', availableReceivers);
+
+    // Shuffle arrays
+    availableGivers.sort(() => Math.random() - 0.5);
+    availableReceivers.sort(() => Math.random() - 0.5);
+
+    for (const giver of availableGivers) {
+      // Find valid receivers (not self and not partner)
+      const validReceivers = availableReceivers.filter(receiver => {
+        // Can't be self
+        if (receiver === giver) return false;
+        
+        // Can't be partner
+        const isPartner = couples.some(couple => 
+          (couple.member1_id === giver && couple.member2_id === receiver) ||
+          (couple.member2_id === giver && couple.member1_id === receiver)
+        );
+        if (isPartner) return false;
+
+        return true;
+      });
+
+      console.log(`Valid receivers for giver ${giver}:`, validReceivers);
+
+      // If no valid receivers, start over
+      if (validReceivers.length === 0) {
+        console.log('No valid receivers found, restarting...');
+        return generateAssignments(); // Recursive retry
+      }
+
+      // Pick random receiver from valid options
+      const receiverIndex = Math.floor(Math.random() * validReceivers.length);
+      const receiver = validReceivers[receiverIndex];
+
+      // Add assignment
+      newAssignments.push({ giver_id: giver, receiver_id: receiver });
+      console.log(`Assigned ${giver} to give to ${receiver}`);
+
+      // Remove used receiver
+      availableReceivers = availableReceivers.filter(r => r !== receiver);
+    }
+
+    console.log('Final assignments:', newAssignments);
+    return newAssignments;
+  };
+
+  const handleGenerateAssignments = async () => {
+    try {
+      if (members.length < 2) {
+        setError('Need at least 2 members to generate assignments');
+        return;
+      }
+
+      console.log('Generating assignments...');
+      const newAssignments = generateAssignments();
+      console.log('Generated assignments:', newAssignments);
+      
+      // First, delete any existing assignments
+      const { error: deleteError } = await supabase
+        .from('gift_assignments')
+        .delete()
+        .eq('group_id', id);
+
+      if (deleteError) {
+        console.error('Error deleting old assignments:', deleteError);
+        throw deleteError;
+      }
+
+      // Then insert new assignments
+      const { data, error: insertError } = await supabase
+        .from('gift_assignments')
+        .insert(newAssignments.map(a => ({
+          group_id: id,
+          giver_id: a.giver_id,
+          receiver_id: a.receiver_id
+        })))
+        .select();
+
+      if (insertError) {
+        console.error('Error saving assignments:', insertError);
+        throw insertError;
+      }
+
+      // Update local state
+      setAssignments(newAssignments);
+      console.log('Assignments saved successfully:', data);
+    } catch (error) {
+      console.error('Error in handleGenerateAssignments:', error);
+      setError(error instanceof Error ? error.message : 'Failed to generate assignments');
+    }
+  };
+
+  const updateCouples = async (newCouples: Couple[]) => {
+    try {
+      // Delete existing couples for this group
+      const { error: deleteError } = await supabase
+        .from('couples')
+        .delete()
+        .eq('group_id', id);
+
+      if (deleteError) throw deleteError;
+
+      // Insert new couples if there are any
+      if (newCouples.length > 0) {
+        const { error: insertError } = await supabase
+          .from('couples')
+          .insert(
+            newCouples.map(couple => ({
+              id: couple.id,
+              group_id: id,
+              member1_id: couple.member1_id,
+              member2_id: couple.member2_id
+            }))
+          );
+
+        if (insertError) throw insertError;
+      }
+
+      setCouples(newCouples);
+    } catch (error) {
+      console.error('Error updating couples:', error);
+      setError(error instanceof Error ? error.message : 'An unexpected error occurred');
     }
   };
 
@@ -228,17 +399,150 @@ export default function GroupDetails() {
         </div>
       )}
 
-      {/* Welcome Message */}
-      {!assignments.length && (
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-          <h3 className="text-lg font-medium text-blue-900">Welcome to {group?.name}!</h3>
-          <div className="mt-2 text-sm text-blue-700">
-            <p>Once everyone has joined, the admin will:</p>
-            <ol className="list-decimal ml-5 mt-2 space-y-1">
-              <li>Set up any couples (so partners don't get assigned to each other)</li>
-              <li>Generate the Secret Santa assignments</li>
-              <li>You'll then see who you need to buy a gift for!</li>
-            </ol>
+      {/* Couples and Assignment Section */}
+      {isAdmin && (
+        <div className="bg-white shadow overflow-hidden sm:rounded-lg">
+          <div className="px-4 py-5 sm:px-6">
+            <h3 className="text-lg leading-6 font-medium text-gray-900">Couples</h3>
+          </div>
+          <div className="border-t border-gray-200 px-4 py-5 sm:px-6">
+            <div className="space-y-4">
+              <div>
+                <h4 className="text-sm font-medium text-gray-700">Current Couples</h4>
+                {couples.map((couple, index) => (
+                  <div key={index} className="mt-2 flex items-center space-x-2">
+                    <select 
+                      value={couple.member1_id}
+                      onChange={(e) => {
+                        const newCouples = [...couples];
+                        newCouples[index].member1_id = e.target.value;
+                        updateCouples(newCouples);
+                      }}
+                      className="rounded-md border-gray-300"
+                    >
+                      {members.map(member => (
+                        <option key={member.user_id} value={member.user_id}>
+                          {member.profiles?.full_name || member.profiles?.email}
+                        </option>
+                      ))}
+                    </select>
+                    <span>and</span>
+                    <select
+                      value={couple.member2_id}
+                      onChange={(e) => {
+                        const newCouples = [...couples];
+                        newCouples[index].member2_id = e.target.value;
+                        updateCouples(newCouples);
+                      }}
+                      className="rounded-md border-gray-300"
+                    >
+                      {members.map(member => (
+                        <option key={member.user_id} value={member.user_id}>
+                          {member.profiles?.full_name || member.profiles?.email}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      onClick={() => updateCouples(couples.filter((_, i) => i !== index))}
+                      className="text-red-600 hover:text-red-800"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ))}
+                <button
+                  onClick={() => updateCouples([...couples, { 
+                    id: crypto.randomUUID(),
+                    member1_id: members[0]?.user_id || '',
+                    member2_id: members[1]?.user_id || ''
+                  }])}
+                  className="mt-2 text-sm text-primary hover:text-primary-dark"
+                >
+                  + Add Couple
+                </button>
+              </div>
+              
+              {!assignments.length && (
+                <button
+                  onClick={handleGenerateAssignments}
+                  className="mt-4 w-full inline-flex justify-center items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary hover:bg-primary-dark"
+                >
+                  Generate Assignments
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Assignments Display */}
+      {assignments.length > 0 && (
+        <div className="bg-white shadow overflow-hidden sm:rounded-lg">
+          <div className="px-4 py-5 sm:px-6 flex justify-between items-center">
+            <h3 className="text-lg leading-6 font-medium text-gray-900">
+              {isAdmin && showAllAssignments ? "All Assignments" : "Your Assignment"}
+            </h3>
+            <div className="flex space-x-3">
+              {isAdmin && (
+                <>
+                  <button
+                    onClick={handleGenerateAssignments}
+                    className="inline-flex items-center px-3 py-1.5 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-white bg-primary hover:bg-primary-dark focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary"
+                  >
+                    <svg className="h-4 w-4 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                    Regenerate
+                  </button>
+                  <button
+                    onClick={() => setShowAllAssignments(!showAllAssignments)}
+                    className="inline-flex items-center px-3 py-1.5 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary"
+                  >
+                    {showAllAssignments ? "Show My Assignment" : "Show All Assignments"}
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+          <div className="border-t border-gray-200 px-4 py-5 sm:px-6">
+            {isAdmin && showAllAssignments ? (
+              <div className="space-y-4">
+                {assignments.map(assignment => {
+                  const giver = members.find(m => m.user_id === assignment.giver_id);
+                  const receiver = members.find(m => m.user_id === assignment.receiver_id);
+                  return (
+                    <div key={assignment.giver_id} className="flex justify-between items-center py-2 border-b border-gray-100">
+                      <div className="font-medium text-gray-900">
+                        {giver?.profiles?.full_name || giver?.profiles?.email}
+                      </div>
+                      <div className="flex items-center">
+                        <svg className="h-5 w-5 text-gray-400 mx-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
+                        </svg>
+                        <div className="font-medium text-primary">
+                          {receiver?.profiles?.full_name || receiver?.profiles?.email}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              // Original single assignment view
+              assignments
+                .filter(a => a.giver_id === user?.id)
+                .map(assignment => {
+                  const receiver = members.find(m => m.user_id === assignment.receiver_id);
+                  return (
+                    <div key={assignment.receiver_id} className="text-center">
+                      <p className="text-lg text-gray-900">You are buying a gift for:</p>
+                      <p className="text-xl font-bold text-primary mt-2">
+                        {receiver?.profiles?.full_name || receiver?.profiles?.email}
+                      </p>
+                    </div>
+                  );
+                })
+            )}
           </div>
         </div>
       )}

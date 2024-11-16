@@ -32,7 +32,7 @@ export default function ResetPassword() {
         state: { message: 'Password has been reset successfully' }
       });
     } catch (error) {
-      setError(error.message);
+      setError(error instanceof Error ? error.message : 'An unexpected error occurred');
     } finally {
       setLoading(false);
     }

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate, Link } from 'react-router-dom';
+import { FirebaseError } from 'firebase/app';
 
 const Login = () => {
   const [email, setEmail] = useState('');
@@ -15,11 +16,16 @@ const Login = () => {
       setError('');
       await signInWithEmail(email, password);
       navigate('/dashboard');
-    } catch (err: any) {
-      if (err.message.includes('Invalid login credentials')) {
-        setError('Invalid email or password. Please check your credentials and try again.');
+    } catch (err: unknown) {
+      const firebaseError = err as FirebaseError;
+      if (firebaseError instanceof FirebaseError) {
+        if (firebaseError.message.includes('Invalid login credentials')) {
+          setError('Invalid email or password. Please check your credentials and try again.');
+        } else {
+          setError(firebaseError.message || 'Failed to sign in');
+        }
       } else {
-        setError(err.message || 'Failed to sign in');
+        setError('An unexpected error occurred');
       }
       console.error('Error logging in:', err);
     }
